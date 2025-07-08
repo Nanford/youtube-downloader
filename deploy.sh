@@ -37,7 +37,7 @@ check_domain_dns() {
     log_step "检查域名 DNS 解析..."
     
     CURRENT_IP=$(curl -s http://checkip.amazonaws.com/ || curl -s http://ipv4.icanhazip.com/)
-    DOMAIN_IP=$(dig +short $DOMAIN @8.8.8.8 | head -n1)
+    DOMAIN_IP=$(dig +short yt.leenf.online @8.8.8.8 | tail -n1)
     
     log_info "服务器 IP: $CURRENT_IP"
     log_info "域名解析 IP: $DOMAIN_IP"
