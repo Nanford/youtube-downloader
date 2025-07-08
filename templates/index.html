@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube 视频下载器 - yt.leenf.online</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <meta name="description" content="免费的YouTube视频下载器，支持高画质下载，简单易用">
+    <meta name="keywords" content="YouTube下载,视频下载,在线下载,免费下载">
+</head>
+<body>
+    <div class="container">
+        <!-- 顶部标题栏 -->
+        <header class="header">
+            <div class="logo">
+                <i class="fab fa-youtube"></i>
+                <h1>YouTube 下载器</h1>
+                <span class="domain">yt.leenf.online</span>
+            </div>
+            <div class="status-indicator">
+                <span id="connection-status" class="status-dot offline"></span>
+                <span id="connection-text">连接中...</span>
+                <div class="session-info">
+                    <span>会话: <code id="session-id">-</code></span>
+                </div>
+            </div>
+        </header>
+
+        <!-- 主要内容区域 -->
+        <main class="main-content">
+            <!-- Cookies 上传区域 -->
+            <section class="cookies-section">
+                <div class="cookies-header">
+                    <h2><i class="fas fa-cookie-bite"></i> Cookies 认证</h2>
+                    <div class="cookies-status" id="cookies-status">
+                        <span class="status-text">未上传</span>
+                    </div>
+                </div>
+                
+                <div class="cookies-upload">
+                    <div class="upload-area" id="upload-area">
+                        <div class="upload-icon">
+                            <i class="fas fa-cloud-upload-alt"></i>
+                        </div>
+                        <div class="upload-text">
+                            <p>拖拽 cookies.txt 文件到此处</p>
+                            <p>或者</p>
+                            <button class="btn btn-upload" onclick="document.getElementById('cookies-file').click()">
+                                <i class="fas fa-file-upload"></i>
+                                选择文件
+                            </button>
+                        </div>
+                        <input type="file" id="cookies-file" accept=".txt" style="display: none;">
+                    </div>
+                    
+                    <div class="cookies-help">
+                        <details>
+                            <summary><i class="fas fa-question-circle"></i> 如何获取 cookies.txt？</summary>
+                            <div class="help-content">
+                                <div class="help-step">
+                                    <h4>🎯 推荐方法：使用浏览器扩展</h4>
+                                    <ol>
+                                        <li>安装 Chrome 扩展：<a href="https://chrome.google.com/webstore/detail/get-cookiestxt-locally/cclelndahbckbenkjhflpdbgdldlbecc" target="_blank">"Get cookies.txt LOCALLY"</a></li>
+                                        <li>访问 <a href="https://www.youtube.com" target="_blank">YouTube</a> 并完全登录</li>
+                                        <li>点击扩展图标 → Export → 保存为 cookies.txt</li>
+                                        <li>上传到此处</li>
+                                    </ol>
+                                </div>
+                                
+                                <div class="help-warning">
+                                    <h4>⚠️ 重要提示</h4>
+                                    <ul>
+                                        <li>必须在完全登录状态下获取</li>
+                                        <li>文件格式必须是 Netscape 格式</li>
+                                        <li>Cookies 有效期通常为 1-3 个月</li>
+                                        <li>不要分享给其他人</li>
+                                        <li>每个用户的 cookies 会单独存储</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </details>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 输入区域 -->
+            <section class="input-section">
+                <div class="input-header">
+                    <h2><i class="fas fa-link"></i> 视频链接</h2>
+                    <div class="input-tips">
+                        <span class="tip">💡 支持单个或多个 YouTube 链接，每行一个</span>
+                    </div>
+                </div>
+                
+                <div class="textarea-container">
+                    <textarea 
+                        id="url-input" 
+                        placeholder="请粘贴 YouTube 视频链接...&#10;&#10;支持格式：&#10;https://www.youtube.com/watch?v=dQw4w9WgXcQ&#10;https://youtu.be/dQw4w9WgXcQ&#10;https://www.youtube.com/shorts/CYoKdnmZPUA"
+                        rows="6">
+                    </textarea>
+                    <div class="input-counter">
+                        <span id="url-count">0</span> 个链接
+                    </div>
+                </div>
+
+                <div class="action-buttons">
+                    <button id="download-btn" class="btn btn-primary" disabled>
+                        <i class="fas fa-download"></i>
+                        开始下载
+                    </button>
+                    <button id="clear-btn" class="btn btn-secondary">
+                        <i class="fas fa-trash"></i>
+                        清空
+                    </button>
+                </div>
+            </section>
+
+            <!-- 进度区域 -->
+            <section class="progress-section" id="progress-section" style="display: none;">
+                <div class="progress-header">
+                    <h3><i class="fas fa-tasks"></i> 下载进度</h3>
+                    <span id="progress-text">0/0</span>
+                </div>
+                
+                <div class="progress-bar-container">
+                    <div class="progress-bar">
+                        <div id="progress-fill" class="progress-fill"></div>
+                    </div>
+                    <span id="progress-percentage">0%</span>
+                </div>
+                
+                <div class="progress-stats">
+                    <span class="stat">
+                        <i class="fas fa-clock"></i>
+                        状态: <span id="download-status">准备中</span>
+                    </span>
+                    <span class="stat">
+                        <i class="fas fa-microchip"></i>
+                        FFmpeg: <span id="ffmpeg-status">检测中</span>
+                    </span>
+                </div>
+            </section>
+
+            <!-- 下载文件列表 -->
+            <section class="files-section" id="files-section" style="display: none;">
+                <div class="files-header">
+                    <h3><i class="fas fa-folder"></i> 下载的文件</h3>
+                    <button id="refresh-files-btn" class="btn btn-small">
+                        <i class="fas fa-sync"></i>
+                        刷新
+                    </button>
+                </div>
+                
+                <div id="files-list" class="files-list">
+                    <!-- 动态生成文件列表 -->
+                </div>
+            </section>
+
+            <!-- 日志区域 -->
+            <section class="log-section">
+                <div class="log-header">
+                    <h3><i class="fas fa-terminal"></i> 实时日志</h3>
+                    <div class="log-controls">
+                        <button id="clear-log-btn" class="btn btn-small">
+                            <i class="fas fa-eraser"></i>
+                            清空日志
+                        </button>
+                        <button id="auto-scroll-btn" class="btn btn-small active">
+                            <i class="fas fa-arrow-down"></i>
+                            自动滚动
+                        </button>
+                    </div>
+                </div>
+                
+                <div id="log-container" class="log-container">
+                    <div class="log-welcome">
+                        <i class="fas fa-info-circle"></i>
+                        欢迎使用 YouTube 下载器！请先上传 cookies.txt 文件，然后输入视频链接开始下载。
+                        <br><br>
+                        <strong>提示：</strong>每个用户的下载文件和 cookies 都是独立存储的，保证数据安全。
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- 底部信息 -->
+        <footer class="footer">
+            <div class="footer-info">
+                <span><i class="fas fa-server"></i> 服务状态: <span id="server-status">运行中</span></span>
+                <span><i class="fas fa-users"></i> 会话模式: 多用户隔离</span>
+                <span><i class="fas fa-shield-alt"></i> 数据安全: 已保护</span>
+            </div>
+            <div class="footer-links">
+                <a href="https://github.com/Nanford/youtube-downloader" target="_blank">
+                    <i class="fab fa-github"></i> GitHub
+                </a>
+                <a href="#" onclick="showAbout()">
+                    <i class="fas fa-info"></i> 关于
+                </a>
+            </div>
+        </footer>
+    </div>
+
+    <!-- 上传进度模态框 -->
+    <div id="upload-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-upload"></i> 上传 Cookies</h3>
+            </div>
+            <div class="modal-body">
+                <div class="upload-progress">
+                    <div class="progress-bar">
+                        <div id="upload-progress-fill" class="progress-fill"></div>
+                    </div>
+                    <span id="upload-progress-text">正在上传...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 关于模态框 -->
+    <div id="about-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-info-circle"></i> 关于本站</h3>
+                <button class="modal-close" onclick="hideAbout()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <p><strong>YouTube 下载器 v2.0</strong></p>
+                <p>基于 Flask + Socket.IO + yt-dlp 构建的现代化视频下载器</p>
+                <br>
+                <p><strong>主要特性：</strong></p>
+                <ul>
+                    <li>多用户会话隔离</li>
+                    <li>实时下载进度</li>
+                    <li>安全的 Cookies 管理</li>
+                    <li>移动端适配</li>
+                    <li>HTTPS 安全连接</li>
+                </ul>
+                <br>
+                <p><strong>技术栈：</strong></p>
+                <p>Python, Flask, Socket.IO, Docker, Nginx, Let's Encrypt</p>
+                <br>
+                <p><strong>开源地址：</strong></p>
+                <a href="https://github.com/Nanford/youtube-downloader" target="_blank">
+                    GitHub Repository
+                </a>
+            </div>
+        </div>
+    </div>
+
+    <!-- 加载 Socket.IO 和主要 JavaScript -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
