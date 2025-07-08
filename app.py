@@ -286,38 +286,38 @@ class DownloadManager:
             return False
     
     def get_download_options(self):
-        """🔧 获取安全的下载选项"""
-        has_ffmpeg = self.check_ffmpeg()
-        
-        base_opts = [
-            "-o", "%(title).100s.%(ext)s",  # 限制文件名长度
-            "--embed-metadata",
-            "--no-warnings",
-            "--user-agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
-            "--referer", "https://www.youtube.com/",
-            "--extractor-retries", "2",  # 减少重试次数
-            "--fragment-retries", "2",
-            "--retry-sleep", "exp=1:3",  # 减少重试间隔
-            "--socket-timeout", "30",
-            "--max-filesize", "500M",  # 🔧 添加文件大小限制
-            "--max-duration", "3600",  # 🔧 添加时长限制（1小时）
-            "--no-playlist",  # 🔧 禁止下载播放列表
-        ]
-        
-        if has_ffmpeg:
-            base_opts.extend(["-f", "bv*[height<=720]+ba/b[height<=720]"])  # 🔧 限制分辨率
-            self.log_message("🎬 使用 FFmpeg 高画质模式（720p限制）")
-        else:
-            base_opts.extend(["-f", "best[height<=720]/best"])  # 🔧 限制分辨率
-            self.log_message("📱 使用兼容模式（720p限制）")
-        
-        # 添加 cookies
-        if self.cookies_manager.check_cookies_exist():
-            base_opts.extend(["--cookies", str(self.cookies_manager.cookies_file)])
-            age = self.cookies_manager.get_cookies_age_days()
-            self.log_message(f"🍪 使用 cookies 文件（{age}天前上传）")
-        
-        return base_opts
+    """🔧 获取安全的下载选项"""
+    has_ffmpeg = self.check_ffmpeg()
+    
+    base_opts = [
+        "-o", "%(title).100s.%(ext)s",  # 限制文件名长度
+        "--embed-metadata",
+        "--no-warnings",
+        "--user-agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
+        "--referer", "https://www.youtube.com/",
+        "--extractor-retries", "2",  # 减少重试次数
+        "--fragment-retries", "2",
+        "--retry-sleep", "exp=1:3",  # 减少重试间隔
+        "--socket-timeout", "30",
+        "--max-filesize", "500M",  # 🔧 添加文件大小限制
+        # "--max-duration", "3600",  # 移除不支持的选项
+        "--no-playlist",  # 🔧 禁止下载播放列表
+    ]
+    
+    if has_ffmpeg:
+        base_opts.extend(["-f", "bv*[height<=720]+ba/b[height<=720]"])  # 🔧 限制分辨率
+        self.log_message("🎬 使用 FFmpeg 高画质模式（720p限制）")
+    else:
+        base_opts.extend(["-f", "best[height<=720]/best"])  # 🔧 限制分辨率
+        self.log_message("📱 使用兼容模式（720p限制）")
+    
+    # 添加 cookies
+    if self.cookies_manager.check_cookies_exist():
+        base_opts.extend(["--cookies", str(self.cookies_manager.cookies_file)])
+        age = self.cookies_manager.get_cookies_age_days()
+        self.log_message(f"🍪 使用 cookies 文件（{age}天前上传）")
+    
+    return base_opts
     
     def validate_urls(self, urls):
         """🔧 验证URL列表"""
