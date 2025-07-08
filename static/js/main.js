@@ -1,14 +1,16 @@
-// YouTube 下载器前端逻辑
+// YouTube 下载器前端逻辑 - 修复版
 class YouTubeDownloader {
     constructor() {
         this.socket = null;
         this.isDownloading = false;
         this.autoScroll = true;
+        this.sessionId = null;
         
         this.initElements();
         this.initSocketConnection();
         this.bindEvents();
         this.updateURLCount();
+        this.initFileUpload();
     }
     
     // 初始化 DOM 元素引用
@@ -21,11 +23,12 @@ class YouTubeDownloader {
             clearBtn: document.getElementById('clear-btn'),
             
             // 进度相关
-            progressSection: document.querySelector('.progress-section'),
+            progressSection: document.getElementById('progress-section'),
             progressText: document.getElementById('progress-text'),
             progressFill: document.getElementById('progress-fill'),
             progressPercentage: document.getElementById('progress-percentage'),
             downloadStatus: document.getElementById('download-status'),
+            ffmpegStatus: document.getElementById('ffmpeg-status'),
             
             // 日志相关
             logContainer: document.getElementById('log-container'),
@@ -36,8 +39,184 @@ class YouTubeDownloader {
             connectionStatus: document.getElementById('connection-status'),
             connectionText: document.getElementById('connection-text'),
             serverStatus: document.getElementById('server-status'),
-            downloadDir: document.getElementById('download-dir')
+            sessionIdDisplay: document.getElementById('session-id'),
+            
+            // 文件上传相关
+            cookiesFile: document.getElementById('cookies-file'),
+            uploadArea: document.getElementById('upload-area'),
+            cookiesStatus: document.getElementById('cookies-status'),
+            uploadModal: document.getElementById('upload-modal'),
+            uploadProgressFill: document.getElementById('upload-progress-fill'),
+            uploadProgressText: document.getElementById('upload-progress-text'),
+            
+            // 文件列表相关
+            filesSection: document.getElementById('files-section'),
+            filesList: document.getElementById('files-list'),
+            refreshFilesBtn: document.getElementById('refresh-files-btn')
         };
+    }
+    
+    // 初始化文件上传相关
+    initFileUpload() {
+        // 拖放事件
+        this.elements.uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            this.elements.uploadArea.classList.add('dragover');
+        });
+        
+        this.elements.uploadArea.addEventListener('dragleave', () => {
+            this.elements.uploadArea.classList.remove('dragover');
+        });
+        
+        this.elements.uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            this.elements.uploadArea.classList.remove('dragover');
+            
+            const files = e.dataTransfer.files;
+            if (files.length > 0) {
+                this.uploadCookiesFile(files[0]);
+            }
+        });
+        
+        // 文件选择事件
+        this.elements.cookiesFile.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                this.uploadCookiesFile(file);
+            }
+        });
+    }
+    
+    // 🔧 修复后的上传Cookies文件方法
+    uploadCookiesFile(file) {
+        if (!file) return;
+        
+        // 检查文件类型和大小
+        if (file.type !== 'text/plain' && !file.name.endsWith('.txt')) {
+            this.addLogEntry('❌ 只支持上传 .txt 文件', 'error');
+            return;
+        }
+        
+        if (file.size > 100 * 1024) { // 100KB 限制
+            this.addLogEntry('❌ 文件过大，最大支持 100KB', 'error');
+            return;
+        }
+        
+        if (file.size === 0) {
+            this.addLogEntry('❌ 文件为空，请选择有效的 cookies 文件', 'error');
+            return;
+        }
+        
+        // 显示上传模态框
+        this.elements.uploadModal.style.display = 'block';
+        this.elements.uploadProgressFill.style.width = '0%';
+        this.elements.uploadProgressText.textContent = '准备上传...';
+        
+        const formData = new FormData();
+        formData.append('cookies_file', file); // 🔧 修复：使用正确的字段名
+        
+        // 创建XHR请求以监控进度
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', '/upload_cookies', true);
+        
+        // 🔧 添加会话ID头部（如果有）
+        if (this.sessionId) {
+            xhr.setRequestHeader('X-Session-ID', this.sessionId);
+        }
+        
+        // 🔧 添加超时设置
+        xhr.timeout = 30000; // 30秒超时
+        
+        // 上传进度
+        xhr.upload.onprogress = (e) => {
+            if (e.lengthComputable) {
+                const percentComplete = Math.round((e.loaded / e.total) * 100);
+                this.elements.uploadProgressFill.style.width = percentComplete + '%';
+                this.elements.uploadProgressText.textContent = `上传中 ${percentComplete}%...`;
+            }
+        };
+        
+        // 请求完成
+        xhr.onload = () => {
+            this.elements.uploadModal.style.display = 'none';
+            
+            if (xhr.status === 200) {
+                try {
+                    const response = JSON.parse(xhr.responseText);
+                    
+                    // 🔧 修复：正确处理响应格式
+                    if (response.message && !response.error) {
+                        this.elements.cookiesStatus.innerHTML = `
+                            <span class="status-text success">✅ 已上传</span>
+                        `;
+                        this.addLogEntry(`🍪 Cookies 上传成功: ${response.message}`, 'success');
+                        
+                        // 🔧 更新会话ID
+                        if (response.session_id) {
+                            this.sessionId = response.session_id;
+                            this.elements.sessionIdDisplay.textContent = response.session_id.substring(0, 8);
+                        }
+                        
+                        // 刷新状态
+                        setTimeout(() => this.getStatus(), 1000);
+                    } else {
+                        this.elements.cookiesStatus.innerHTML = `
+                            <span class="status-text error">❌ 上传失败</span>
+                        `;
+                        this.addLogEntry(`❌ Cookies 上传失败: ${response.error}`, 'error');
+                    }
+                } catch (e) {
+                    this.elements.cookiesStatus.innerHTML = `
+                        <span class="status-text error">❌ 解析错误</span>
+                    `;
+                    this.addLogEntry('❌ 服务器响应解析错误', 'error');
+                    console.error('JSON解析错误:', e, '原始响应:', xhr.responseText);
+                }
+            } else {
+                // 处理HTTP错误状态
+                let errorMessage = `HTTP ${xhr.status}`;
+                try {
+                    const errorResponse = JSON.parse(xhr.responseText);
+                    if (errorResponse.error) {
+                        errorMessage = errorResponse.error;
+                    }
+                } catch (e) {
+                    // 忽略JSON解析错误，使用默认错误消息
+                }
+                
+                this.elements.cookiesStatus.innerHTML = `
+                    <span class="status-text error">❌ 上传失败</span>
+                `;
+                this.addLogEntry(`❌ 上传失败: ${errorMessage}`, 'error');
+            }
+            
+            // 🔧 清空文件输入框，允许重复上传同一文件
+            this.elements.cookiesFile.value = '';
+        };
+        
+        // 错误处理
+        xhr.onerror = () => {
+            this.elements.uploadModal.style.display = 'none';
+            this.elements.cookiesStatus.innerHTML = `
+                <span class="status-text error">❌ 网络错误</span>
+            `;
+            this.addLogEntry('❌ 网络错误，请检查连接', 'error');
+            this.elements.cookiesFile.value = '';
+        };
+        
+        // 🔧 超时处理
+        xhr.ontimeout = () => {
+            this.elements.uploadModal.style.display = 'none';
+            this.elements.cookiesStatus.innerHTML = `
+                <span class="status-text error">❌ 上传超时</span>
+            `;
+            this.addLogEntry('❌ 上传超时，请重试', 'error');
+            this.elements.cookiesFile.value = '';
+        };
+        
+        // 发送请求
+        xhr.send(formData);
+        this.addLogEntry(`📤 正在上传 Cookies 文件: ${file.name} (${(file.size/1024).toFixed(1)}KB)`, 'info');
     }
     
     // 初始化 Socket.IO 连接
@@ -68,7 +247,11 @@ class YouTubeDownloader {
         
         // 连接确认
         this.socket.on('connected', (data) => {
-            console.log('Socket 连接确认:', data.message);
+            if (data.session_id) {
+                this.sessionId = data.session_id;
+                this.elements.sessionIdDisplay.textContent = data.session_id.substring(0, 8);
+            }
+            console.log('Socket 连接确认:', data);
         });
     }
     
@@ -98,6 +281,13 @@ class YouTubeDownloader {
         this.elements.autoScrollBtn.addEventListener('click', () => {
             this.toggleAutoScroll();
         });
+        
+        // 刷新文件列表按钮
+        if (this.elements.refreshFilesBtn) {
+            this.elements.refreshFilesBtn.addEventListener('click', () => {
+                this.refreshFilesList();
+            });
+        }
         
         // 键盘快捷键
         document.addEventListener('keydown', (e) => {
@@ -186,11 +376,18 @@ class YouTubeDownloader {
         this.showProgressSection();
         
         try {
+            const headers = {
+                'Content-Type': 'application/json',
+            };
+            
+            // 添加会话ID头部
+            if (this.sessionId) {
+                headers['X-Session-ID'] = this.sessionId;
+            }
+            
             const response = await fetch('/api/download', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: headers,
                 body: JSON.stringify({
                     urls: urls
                 })
@@ -206,6 +403,12 @@ class YouTubeDownloader {
             const result = await response.json();
             this.addLogEntry(`📤 ${result.message}`, 'info');
             
+            // 更新会话ID
+            if (result.session_id) {
+                this.sessionId = result.session_id;
+                this.elements.sessionIdDisplay.textContent = result.session_id.substring(0, 8);
+            }
+            
         } catch (error) {
             this.addLogEntry(`❌ 网络错误: ${error.message}`, 'error');
             this.setDownloadingState(false);
@@ -217,13 +420,12 @@ class YouTubeDownloader {
         this.isDownloading = downloading;
         
         if (downloading) {
-            this.elements.downloadBtn.textContent = '下载中...';
+            this.elements.downloadBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 下载中...';
             this.elements.downloadBtn.classList.add('loading', 'disabled');
             this.elements.downloadBtn.disabled = true;
         } else {
             this.elements.downloadBtn.innerHTML = '<i class="fas fa-download"></i> 开始下载';
             this.elements.downloadBtn.classList.remove('loading', 'disabled');
-            this.elements.downloadBtn.disabled = false;
             this.updateURLCount(); // 重新检查URL状态
         }
     }
@@ -255,12 +457,63 @@ class YouTubeDownloader {
         
         this.elements.downloadStatus.textContent = statusMap[status] || status;
         
-        // 如果下载完成，重置状态
+        // 如果下载完成，重置状态并刷新文件列表
         if (status === 'completed') {
             setTimeout(() => {
                 this.setDownloadingState(false);
+                this.refreshFilesList();
             }, 2000);
         }
+    }
+    
+    // 刷新文件列表
+    async refreshFilesList() {
+        if (!this.sessionId) return;
+        
+        try {
+            const response = await fetch(`/downloads/${this.sessionId}`);
+            if (response.ok) {
+                const data = await response.json();
+                this.updateFilesList(data.files);
+            }
+        } catch (error) {
+            console.error('刷新文件列表失败:', error);
+        }
+    }
+    
+    // 更新文件列表显示
+    updateFilesList(files) {
+        if (!files || files.length === 0) {
+            this.elements.filesSection.style.display = 'none';
+            return;
+        }
+        
+        this.elements.filesSection.style.display = 'block';
+        this.elements.filesList.innerHTML = '';
+        
+        files.forEach(file => {
+            const fileItem = document.createElement('div');
+            fileItem.className = 'file-item';
+            fileItem.innerHTML = `
+                <div class="file-info">
+                    <span class="file-name">${file.name}</span>
+                    <span class="file-size">${this.formatFileSize(file.size)}</span>
+                </div>
+                <a href="${file.url}" class="btn btn-small" download>
+                    <i class="fas fa-download"></i> 下载
+                </a>
+            `;
+            this.elements.filesList.appendChild(fileItem);
+        });
+    }
+    
+    // 格式化文件大小
+    formatFileSize(bytes) {
+        if (bytes === 0) return '0 B';
+        const k = 1024;
+        const sizes = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
     }
     
     // 添加日志条目
@@ -332,11 +585,39 @@ class YouTubeDownloader {
     // 获取应用状态
     async getStatus() {
         try {
-            const response = await fetch('/api/status');
+            const headers = {};
+            if (this.sessionId) {
+                headers['X-Session-ID'] = this.sessionId;
+            }
+            
+            const response = await fetch('/api/status', { headers });
             const status = await response.json();
             
-            // 更新下载目录显示
-            this.elements.downloadDir.textContent = status.download_dir;
+            // 更新会话ID
+            if (status.session_id) {
+                this.sessionId = status.session_id;
+                this.elements.sessionIdDisplay.textContent = status.session_id.substring(0, 8);
+            }
+            
+            // 更新Cookies状态
+            if (status.cookies) {
+                if (status.cookies.exists) {
+                    this.elements.cookiesStatus.innerHTML = `
+                        <span class="status-text ${status.cookies.should_update ? 'warning' : 'success'}">
+                            ${status.cookies.status_message}
+                        </span>
+                    `;
+                } else {
+                    this.elements.cookiesStatus.innerHTML = `
+                        <span class="status-text error">❌ 未上传</span>
+                    `;
+                }
+            }
+            
+            // 更新FFmpeg状态
+            if (this.elements.ffmpegStatus) {
+                this.elements.ffmpegStatus.textContent = status.ffmpeg_available ? '✅ 可用' : '❌ 不可用';
+            }
             
             // 如果正在下载，更新UI状态
             if (status.is_downloading) {
@@ -345,38 +626,13 @@ class YouTubeDownloader {
                 this.updateProgress(status.progress);
             }
             
+            // 刷新文件列表
+            this.refreshFilesList();
+            
         } catch (error) {
             console.error('获取状态失败:', error);
         }
     }
-}
-
-// 工具函数：节流
-function throttle(func, wait) {
-    let timeout;
-    return function executedFunction(...args) {
-        const later = () => {
-            clearTimeout(timeout);
-            func(...args);
-        };
-        clearTimeout(timeout);
-        timeout = setTimeout(later, wait);
-    };
-}
-
-// 工具函数：防抖
-function debounce(func, wait, immediate) {
-    let timeout;
-    return function executedFunction(...args) {
-        const later = () => {
-            timeout = null;
-            if (!immediate) func(...args);
-        };
-        const callNow = immediate && !timeout;
-        clearTimeout(timeout);
-        timeout = setTimeout(later, wait);
-        if (callNow) func(...args);
-    };
 }
 
 // DOM 加载完成后初始化应用
@@ -389,6 +645,13 @@ document.addEventListener('DOMContentLoaded', () => {
     // 获取初始状态
     window.downloader.getStatus();
     
+    // 定期更新状态（可选）
+    setInterval(() => {
+        if (!window.downloader.isDownloading) {
+            window.downloader.getStatus();
+        }
+    }, 30000); // 每30秒更新一次
+    
     // 添加全局错误处理
     window.addEventListener('error', (e) => {
         console.error('全局错误:', e.error);
@@ -397,5 +660,34 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
     
+    // 处理页面刷新时的状态恢复
+    window.addEventListener('beforeunload', () => {
+        // 可以在这里保存一些状态到localStorage
+        console.log('页面即将刷新/关闭');
+    });
+    
     console.log('✅ YouTube 下载器初始化完成');
+});
+
+// 显示和隐藏关于模态框
+function showAbout() {
+    document.getElementById('about-modal').style.display = 'block';
+}
+
+function hideAbout() {
+    document.getElementById('about-modal').style.display = 'none';
+    
+    // 点击模态框外部关闭
+    document.getElementById('about-modal').addEventListener('click', (e) => {
+        if (e.target.id === 'about-modal') {
+            hideAbout();
+        }
+    });
+}
+
+// 添加模态框外部点击关闭功能
+document.addEventListener('click', (e) => {
+    if (e.target.classList.contains('modal')) {
+        e.target.style.display = 'none';
+    }
 });
