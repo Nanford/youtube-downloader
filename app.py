@@ -286,38 +286,38 @@ class DownloadManager:
             return False
     
     def get_download_options(self):
-    """🔧 获取安全的下载选项"""
-    has_ffmpeg = self.check_ffmpeg()
-    
-    base_opts = [
-        "-o", "%(title).100s.%(ext)s",  # 限制文件名长度
-        "--embed-metadata",
-        "--no-warnings",
-        "--user-agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
-        "--referer", "https://www.youtube.com/",
-        "--extractor-retries", "2",  # 减少重试次数
-        "--fragment-retries", "2",
-        "--retry-sleep", "exp=1:3",  # 减少重试间隔
-        "--socket-timeout", "30",
-        "--max-filesize", "500M",  # 🔧 添加文件大小限制
-        # "--max-duration", "3600",  # 移除不支持的选项
-        "--no-playlist",  # 🔧 禁止下载播放列表
-    ]
-    
-    if has_ffmpeg:
-        base_opts.extend(["-f", "bv*[height<=720]+ba/b[height<=720]"])  # 🔧 限制分辨率
-        self.log_message("🎬 使用 FFmpeg 高画质模式（720p限制）")
-    else:
-        base_opts.extend(["-f", "best[height<=720]/best"])  # 🔧 限制分辨率
-        self.log_message("📱 使用兼容模式（720p限制）")
-    
-    # 添加 cookies
-    if self.cookies_manager.check_cookies_exist():
-        base_opts.extend(["--cookies", str(self.cookies_manager.cookies_file)])
-        age = self.cookies_manager.get_cookies_age_days()
-        self.log_message(f"🍪 使用 cookies 文件（{age}天前上传）")
-    
-    return base_opts
+        """🔧 获取安全的下载选项"""
+        has_ffmpeg = self.check_ffmpeg()
+        
+        base_opts = [
+            "-o", "%(title).60s.%(ext)s",  # 限制文件名长度为60个字符
+            "--embed-metadata",
+            "--no-warnings",
+            "--user-agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
+            "--referer", "https://www.youtube.com/",
+            "--extractor-retries", "2",  # 减少重试次数
+            "--fragment-retries", "2",
+            "--retry-sleep", "exp=1:3",  # 减少重试间隔
+            "--socket-timeout", "30",
+            "--max-filesize", "500M",  # 🔧 添加文件大小限制
+            # "--max-duration", "3600",  # 移除不支持的选项
+            "--no-playlist",  # 🔧 禁止下载播放列表
+        ]
+        
+        if has_ffmpeg:
+            base_opts.extend(["-f", "bv*[height<=720]+ba/b[height<=720]"])  # 🔧 限制分辨率
+            self.log_message("🎬 使用 FFmpeg 高画质模式（720p限制）")
+        else:
+            base_opts.extend(["-f", "best[height<=720]/best"])  # 🔧 限制分辨率
+            self.log_message("📱 使用兼容模式（720p限制）")
+        
+        # 添加 cookies
+        if self.cookies_manager.check_cookies_exist():
+            base_opts.extend(["--cookies", str(self.cookies_manager.cookies_file)])
+            age = self.cookies_manager.get_cookies_age_days()
+            self.log_message(f"🍪 使用 cookies 文件（{age}天前上传）")
+        
+        return base_opts
     
     def validate_urls(self, urls):
         """🔧 验证URL列表"""
@@ -583,12 +583,17 @@ def download_files(session_id):
         try:
             for file_path in download_dir.iterdir():
                 if file_path.is_file() and file_path.stat().st_size > 0:
-                    # 🔧 安全的文件名处理
-                    safe_name = secure_filename(file_path.name)
+                    # 对于长文件名，在前端显示时添加省略号
+                    name = file_path.name
+                    display_name = name
+                    if len(name) > 40:
+                        display_name = name[:37] + "..."
+                    
                     files.append({
-                        "name": safe_name,
+                        "name": display_name,
+                        "full_name": name,  # 保存完整文件名用于下载
                         "size": file_path.stat().st_size,
-                        "url": f"/download_file/{session_id}/{safe_name}",
+                        "url": f"/download_file/{session_id}/{name}",
                         "modified": file_path.stat().st_mtime
                     })
             
@@ -613,20 +618,32 @@ def download_file(session_id, filename):
         if not validate_session_id(session_id) or session_id not in user_sessions:
             return jsonify({"error": "会话不存在"}), 404
         
-        # 🔧 安全文件名处理
-        safe_filename = secure_filename(filename)
-        if not safe_filename or safe_filename != filename:
-            return jsonify({"error": "无效的文件名"}), 400
-        
         session = user_sessions[session_id]
         download_dir = session.get_download_dir()
-        file_path = download_dir / safe_filename
         
-        # 🔧 检查文件是否存在且在正确目录中
-        if not file_path.exists() or not str(file_path).startswith(str(download_dir)):
+        # 查找与请求文件名匹配的文件
+        requested_file = None
+        for file_path in download_dir.iterdir():
+            if file_path.is_file() and file_path.name == filename:
+                requested_file = file_path
+                break
+                
+        # 如果没有找到完全匹配的文件，尝试匹配文件名前缀
+        if not requested_file and '...' in filename:
+            prefix = filename.split('...')[0]
+            for file_path in download_dir.iterdir():
+                if file_path.is_file() and file_path.name.startswith(prefix):
+                    requested_file = file_path
+                    break
+        
+        if not requested_file:
             return jsonify({"error": "文件不存在"}), 404
         
-        return send_from_directory(download_dir, safe_filename, as_attachment=True)
+        # 确保文件在正确目录中
+        if not str(requested_file).startswith(str(download_dir)):
+            return jsonify({"error": "文件不存在"}), 404
+        
+        return send_from_directory(download_dir, requested_file.name, as_attachment=True)
         
     except Exception as e:
         app.logger.error(f"Download file error: {str(e)}")
@@ -718,4 +735,4 @@ def not_found(error):
 if __name__ == '__main__':
     start_cleanup_task()
     app.logger.info(f"🚀 启动 YouTube 下载器 - {config.DOMAIN}")
-    socketio.run(app, debug=config.DEBUG, host=config.HOST, port=config.PORT)
+    socketio.run(app, debug=config.DEBUG, host=config.HOST, port=config.PORT)                        

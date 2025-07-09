@@ -97,8 +97,7 @@
                     <textarea 
                         id="url-input" 
                         placeholder="请粘贴 YouTube 视频链接...&#10;&#10;支持格式：&#10;https://www.youtube.com/watch?v=dQw4w9WgXcQ&#10;https://youtu.be/dQw4w9WgXcQ&#10;https://www.youtube.com/shorts/CYoKdnmZPUA"
-                        rows="6">
-                    </textarea>
+                        rows="6"></textarea>
                     <div class="input-counter">
                         <span id="url-count">0</span> 个链接
                     </div>
@@ -253,5 +252,16 @@
     <!-- 加载 Socket.IO 和主要 JavaScript -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    
+    <script>
+    // 🔧 添加页面加载时的自动清理功能
+    document.addEventListener('DOMContentLoaded', function() {
+        const urlInput = document.getElementById('url-input');
+        // 确保 textarea 没有默认的空白内容
+        if (urlInput && urlInput.value.trim() === '') {
+            urlInput.value = '';
+        }
+    });
+    </script>
 </body>
 </html>
