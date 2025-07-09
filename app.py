@@ -50,6 +50,45 @@ class Config:
 
 config = Config()
 
+# 🔧 新增画质配置
+QUALITY_OPTIONS = {
+    'best': {
+        'name': '最高画质',
+        'format': 'bv*+ba/b',
+        'description': '选择最高可用画质'
+    },
+    '2160p': {
+        'name': '4K (2160p)',
+        'format': 'bv*[height<=2160]+ba/b[height<=2160]',
+        'description': '4K超高清画质'
+    },
+    '1440p': {
+        'name': '2K (1440p)', 
+        'format': 'bv*[height<=1440]+ba/b[height<=1440]',
+        'description': '2K高清画质'
+    },
+    '1080p': {
+        'name': '全高清 (1080p)',
+        'format': 'bv*[height<=1080]+ba/b[height<=1080]',
+        'description': '1080p全高清'
+    },
+    '720p': {
+        'name': '高清 (720p)',
+        'format': 'bv*[height<=720]+ba/b[height<=720]',
+        'description': '720p高清'
+    },
+    '480p': {
+        'name': '标清 (480p)',
+        'format': 'bv*[height<=480]+ba/b[height<=480]',
+        'description': '480p标清'
+    },
+    '360p': {
+        'name': '流畅 (360p)',
+        'format': 'bv*[height<=360]+ba/b[height<=360]',
+        'description': '360p流畅播放'
+    }
+}
+
 # 创建 Flask 应用
 app = Flask(__name__)
 app.config.from_object(config)
@@ -261,6 +300,7 @@ class DownloadManager:
         self.cookies_manager = CookiesManager(session_id)
         self.download_count = 0  # 下载计数
         self.start_time = None
+        self.ffmpeg_path = None
     
     def log_message(self, message):
         safe_message = sanitize_log_message(message)
@@ -277,39 +317,68 @@ class DownloadManager:
         socketio.emit('progress_update', self.current_progress, room=self.room)
     
     def check_ffmpeg(self):
-        """检查 FFmpeg 是否可用"""
-        try:
-            result = subprocess.run(['ffmpeg', '-version'], 
-                                  capture_output=True, text=True, timeout=5)
-            return result.returncode == 0
-        except:
-            return False
+        """改进的 FFmpeg 检查方法"""
+        ffmpeg_paths = [
+            'ffmpeg',  # 系统PATH中的ffmpeg
+            '/usr/bin/ffmpeg',  # 标准安装路径
+            '/usr/local/bin/ffmpeg',  # 自定义安装路径
+        ]
+        
+        for ffmpeg_path in ffmpeg_paths:
+            try:
+                result = subprocess.run([ffmpeg_path, '-version'], 
+                                      capture_output=True, text=True, timeout=5)
+                if result.returncode == 0:
+                    self.ffmpeg_path = ffmpeg_path
+                    return True
+            except:
+                continue
+        
+        self.ffmpeg_path = None
+        return False
     
-    def get_download_options(self):
-        """🔧 获取安全的下载选项"""
+    def get_download_options(self, quality='1080p'):
+        """🔧 支持画质选择的下载选项配置"""
         has_ffmpeg = self.check_ffmpeg()
         
         base_opts = [
-            "-o", "%(title).60s.%(ext)s",  # 限制文件名长度为60个字符
+            "-o", "%(title).60s.%(ext)s",  # 限制文件名长度
             "--embed-metadata",
             "--no-warnings",
             "--user-agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36",
             "--referer", "https://www.youtube.com/",
-            "--extractor-retries", "2",  # 减少重试次数
-            "--fragment-retries", "2",
-            "--retry-sleep", "exp=1:3",  # 减少重试间隔
+            "--extractor-retries", "2",
+            "--fragment-retries", "2", 
+            "--retry-sleep", "exp=1:3",
             "--socket-timeout", "30",
-            "--max-filesize", "500M",  # 🔧 添加文件大小限制
-            # "--max-duration", "3600",  # 移除不支持的选项
-            "--no-playlist",  # 🔧 禁止下载播放列表
+            "--max-filesize", "2G",  # 🔧 增加文件大小限制以支持高画质
+            "--no-playlist",
         ]
         
-        if has_ffmpeg:
-            base_opts.extend(["-f", "bv*[height<=720]+ba/b[height<=720]"])  # 🔧 限制分辨率
-            self.log_message("🎬 使用 FFmpeg 高画质模式（720p限制）")
+        # 🔧 根据选择的画质设置格式
+        if quality in QUALITY_OPTIONS:
+            quality_config = QUALITY_OPTIONS[quality]
+            if has_ffmpeg:
+                format_selector = quality_config['format']
+                base_opts.extend(["--ffmpeg-location", getattr(self, 'ffmpeg_path', 'ffmpeg')])
+            else:
+                # 没有FFmpeg时使用简化格式
+                if quality == 'best':
+                    format_selector = 'best'
+                else:
+                    height = quality.replace('p', '')
+                    format_selector = f'best[height<={height}]/best'
+            
+            base_opts.extend(["-f", format_selector])
+            self.log_message(f"🎬 使用画质: {quality_config['name']} ({'FFmpeg' if has_ffmpeg else '兼容'}模式)")
         else:
-            base_opts.extend(["-f", "best[height<=720]/best"])  # 🔧 限制分辨率
-            self.log_message("📱 使用兼容模式（720p限制）")
+            # 默认使用1080p
+            if has_ffmpeg:
+                base_opts.extend(["-f", "bv*[height<=1080]+ba/b[height<=1080]"])
+                base_opts.extend(["--ffmpeg-location", getattr(self, 'ffmpeg_path', 'ffmpeg')])
+            else:
+                base_opts.extend(["-f", "best[height<=1080]/best"])
+            self.log_message("🎬 使用默认画质: 1080p")
         
         # 添加 cookies
         if self.cookies_manager.check_cookies_exist():
@@ -332,11 +401,18 @@ class DownloadManager:
         
         return True, valid_urls
     
-    def download_video(self, url, download_dir):
-        """🔧 安全的视频下载"""
+    def download_video(self, url, download_dir, quality='1080p'):
+        """🔧 支持画质选择的视频下载方法"""
         self.log_message(f"🎬 开始下载: {url[:50]}...")
         
-        cmd = [sys.executable, "-m", "yt_dlp"] + self.get_download_options()
+        # 记录下载前的文件列表
+        files_before = set()
+        try:
+            files_before = {f.name for f in download_dir.iterdir() if f.is_file()}
+        except:
+            pass
+        
+        cmd = [sys.executable, "-m", "yt_dlp"] + self.get_download_options(quality)
         cmd.extend(["-P", str(download_dir), url])
         
         try:
@@ -348,9 +424,14 @@ class DownloadManager:
                 universal_newlines=True
             )
             
-            # 设置超时
-            timeout = 600  # 10分钟超时
+            # 🔧 根据画质调整超时时间
+            if quality in ['2160p', '1440p', 'best']:
+                timeout = 1200  # 20分钟，用于高画质
+            else:
+                timeout = 600   # 10分钟，用于标准画质
+                
             start_time = time.time()
+            stdout_lines = []
             
             while True:
                 output = process.stdout.readline()
@@ -364,34 +445,102 @@ class DownloadManager:
                     return False
                     
                 if output:
+                    stdout_lines.append(output.strip())
                     clean_output = output.strip()
-                    if clean_output and not clean_output.startswith('['):
-                        # 只显示重要信息
-                        if any(keyword in clean_output.lower() for keyword in 
-                               ['downloading', 'finished', 'error', 'warning']):
-                            self.log_message(f"📥 {clean_output[:100]}...")
+                    # 显示重要的进度信息
+                    if any(keyword in clean_output.lower() for keyword in 
+                           ['downloading', '%', 'mb/s', 'kb/s']):
+                        # 显示下载进度
+                        if '%' in clean_output and any(x in clean_output for x in ['ETA', 'at']):
+                            progress_match = re.search(r'(\d+\.?\d*)%', clean_output)
+                            if progress_match:
+                                self.log_message(f"📥 进度: {progress_match.group(1)}%")
             
-            if process.returncode == 0:
-                self.log_message(f"✅ 下载完成: {url[:30]}...")
+            # 获取错误输出
+            stderr_output = process.stderr.read().strip()
+            stdout_text = '\n'.join(stdout_lines)
+            
+            # 🔧 智能成功判断逻辑
+            success = False
+            error_type = "unknown"
+            
+            # 方法1: 检查是否有新文件生成（最可靠的方法）
+            files_after = set()
+            new_files = set()
+            try:
+                files_after = {f.name for f in download_dir.iterdir() if f.is_file()}
+                new_files = files_after - files_before
+                if new_files:
+                    success = True
+                    for new_file in new_files:
+                        # 只显示文件名的前40个字符
+                        display_name = new_file[:40] + "..." if len(new_file) > 40 else new_file
+                        self.log_message(f"📁 已保存: {display_name}")
+            except:
+                pass
+            
+            # 方法2: 检查stdout中的成功标志
+            success_indicators = [
+                'download completed',
+                'has already been downloaded', 
+                '100%',
+                'already been recorded'
+            ]
+            if any(indicator in stdout_text.lower() for indicator in success_indicators):
+                success = True
+            
+            # 方法3: 分析具体错误类型
+            if stderr_output:
+                error_lower = stderr_output.lower()
+                if "sign in to confirm" in error_lower:
+                    error_type = "auth"
+                elif "private video" in error_lower:
+                    error_type = "private"
+                elif "video unavailable" in error_lower or "video is unavailable" in error_lower:
+                    error_type = "unavailable"
+                elif "postprocessing" in error_lower and "ffmpeg" in error_lower:
+                    error_type = "ffmpeg_postprocess"
+                elif "no video formats found" in error_lower:
+                    error_type = "no_format"
+                elif "unable to download" in error_lower:
+                    error_type = "download_failed"
+            
+            # 🔧 最终成功判断和消息显示
+            if success:
+                if error_type == "ffmpeg_postprocess":
+                    self.log_message("⚠️ 下载完成，但FFmpeg后处理失败（文件已保存）")
+                elif stderr_output and "warning" in stderr_output.lower():
+                    self.log_message("⚠️ 下载完成（有警告信息）")
+                else:
+                    self.log_message(f"✅ 下载完成: {url[:30]}...")
                 return True
             else:
-                error = process.stderr.read().strip()
-                if "Sign in to confirm" in error:
-                    self.log_message("🤖 检测到反机器人保护，请更新 cookies")
-                elif "Private video" in error:
+                # 根据错误类型显示不同消息
+                if error_type == "auth":
+                    self.log_message("🤖 需要登录验证，请更新 cookies")
+                elif error_type == "private":
                     self.log_message("🔒 私有视频，无法下载")
-                elif "Video unavailable" in error:
-                    self.log_message("📹 视频不可用")
+                elif error_type == "unavailable":
+                    self.log_message("📹 视频不可用或已被删除")
+                elif error_type == "no_format":
+                    self.log_message("❌ 没有找到合适的视频格式")
+                elif error_type == "download_failed":
+                    self.log_message("❌ 网络错误或下载被中断")
                 else:
-                    self.log_message(f"❌ 下载失败: {error[:100]}...")
+                    # 显示简化的错误信息
+                    if stderr_output:
+                        error_short = stderr_output[:80].replace('\n', ' ').strip()
+                        self.log_message(f"❌ 下载失败: {error_short}...")
+                    else:
+                        self.log_message(f"❌ 下载失败: 进程返回码 {process.returncode}")
                 return False
                 
         except Exception as e:
-            self.log_message(f"❌ 下载异常: {str(e)[:100]}...")
+            self.log_message(f"❌ 下载异常: {str(e)[:80]}...")
             return False
     
-    def batch_download(self, urls):
-        """🔧 安全的批量下载"""
+    def batch_download(self, urls, quality='1080p'):
+        """🔧 支持画质选择的批量下载"""
         if self.is_downloading:
             self.log_message("⚠️ 正在下载中，请等待完成...")
             return
@@ -408,7 +557,8 @@ class DownloadManager:
         session = user_sessions[self.session_id]
         download_dir = session.get_download_dir()
         
-        self.log_message(f"🚀 开始批量下载，共 {len(urls)} 个视频")
+        quality_name = QUALITY_OPTIONS.get(quality, {}).get('name', quality)
+        self.log_message(f"🚀 开始批量下载，共 {len(urls)} 个视频，画质: {quality_name}")
         self.update_progress(0, len(urls), "starting")
         
         success_count = 0
@@ -416,7 +566,7 @@ class DownloadManager:
             self.update_progress(i-1, len(urls), "downloading")
             self.log_message(f"📋 [{i}/{len(urls)}] 处理: {url[:50]}...")
             
-            if self.download_video(url, download_dir):
+            if self.download_video(url, download_dir, quality):
                 success_count += 1
                 self.download_count += 1
             
@@ -491,7 +641,7 @@ def upload_cookies():
 
 @app.route('/api/download', methods=['POST'])
 def api_download():
-    """🔧 改进的下载 API"""
+    """🔧 支持画质选择的下载 API"""
     try:
         session, session_id = get_or_create_session()
         
@@ -503,9 +653,14 @@ def api_download():
             return jsonify({"error": "无效的请求数据"}), 400
             
         urls = data.get('urls', [])
+        quality = data.get('quality', '1080p')  # 🔧 新增画质参数
         
         if not urls:
             return jsonify({"error": "没有提供有效的 URL"}), 400
+        
+        # 🔧 验证画质选项
+        if quality not in QUALITY_OPTIONS:
+            quality = '1080p'  # 默认使用1080p
         
         # 🔧 增强URL验证
         valid_urls = []
@@ -526,13 +681,13 @@ def api_download():
         
         threading.Thread(
             target=session.download_manager.batch_download,
-            args=(valid_urls,),
+            args=(valid_urls, quality),  # 🔧 传递画质参数
             daemon=True
         ).start()
         
-        app.logger.info(f"Download started for session {session_id[:8]}: {len(valid_urls)} URLs")
+        app.logger.info(f"Download started for session {session_id[:8]}: {len(valid_urls)} URLs, quality: {quality}")
         return jsonify({
-            "message": f"开始下载 {len(valid_urls)} 个视频",
+            "message": f"开始下载 {len(valid_urls)} 个视频 (画质: {QUALITY_OPTIONS[quality]['name']})",
             "session_id": session_id
         })
         
@@ -561,7 +716,8 @@ def api_status():
                 "status_message": message
             },
             "ffmpeg_available": session.download_manager.check_ffmpeg(),
-            "download_count": session.download_manager.download_count
+            "download_count": session.download_manager.download_count,
+            "quality_options": QUALITY_OPTIONS  # 🔧 返回画质选项
         })
         
     except Exception as e:
@@ -735,4 +891,4 @@ def not_found(error):
 if __name__ == '__main__':
     start_cleanup_task()
     app.logger.info(f"🚀 启动 YouTube 下载器 - {config.DOMAIN}")
-    socketio.run(app, debug=config.DEBUG, host=config.HOST, port=config.PORT)                        
+    socketio.run(app, debug=config.DEBUG, host=config.HOST, port=config.PORT)

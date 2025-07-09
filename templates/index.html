@@ -103,6 +103,32 @@
                     </div>
                 </div>
 
+                <!-- 画质选择区域 -->
+                <div class="quality-selection">
+                    <div class="quality-header">
+                        <h3><i class="fas fa-cog"></i> 画质选择</h3>
+                        <div class="quality-select-container">
+                            <select id="quality-select" name="quality" class="quality-select">
+                                <option value="best">🔥 最高画质 - 选择最高可用画质</option>
+                                <option value="2160p">🔥 4K (2160p) - 4K超高清画质</option>
+                                <option value="1440p">🔥 2K (1440p) - 2K高清画质</option>
+                                <option value="1080p" selected>📺 全高清 (1080p) - 1080p全高清 (推荐)</option>
+                                <option value="720p">📱 高清 (720p) - 720p高清</option>
+                                <option value="480p">🌐 标清 (480p) - 480p标清</option>
+                                <option value="360p">📶 流畅 (360p) - 360p流畅播放</option>
+                            </select>
+                            <div class="select-icon">
+                                <i class="fas fa-chevron-down"></i>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="quality-note">
+                        <i class="fas fa-info-circle"></i>
+                        <span>高画质需要更多下载时间和存储空间。部分视频可能不支持所选画质，系统会自动选择最接近的可用画质。</span>
+                    </div>
+                </div>
+
                 <div class="action-buttons">
                     <button id="download-btn" class="btn btn-primary" disabled>
                         <i class="fas fa-download"></i>
@@ -133,6 +159,10 @@
                     <span class="stat">
                         <i class="fas fa-clock"></i>
                         状态: <span id="download-status">准备中</span>
+                    </span>
+                    <span class="stat">
+                        <i class="fas fa-cog"></i>
+                        画质: <span id="selected-quality">1080p</span>
                     </span>
                     <span class="stat">
                         <i class="fas fa-microchip"></i>
@@ -177,6 +207,8 @@
                         <i class="fas fa-info-circle"></i>
                         欢迎使用 YouTube 下载器！请先上传 cookies.txt 文件，然后输入视频链接开始下载。
                         <br><br>
+                        <strong>新功能：</strong>现在支持选择下载画质，从360p到4K任你选择！
+                        <br>
                         <strong>提示：</strong>每个用户的下载文件和 cookies 都是独立存储的，保证数据安全。
                     </div>
                 </div>
@@ -189,6 +221,7 @@
                 <span><i class="fas fa-server"></i> 服务状态: <span id="server-status">运行中</span></span>
                 <span><i class="fas fa-users"></i> 会话模式: 多用户隔离</span>
                 <span><i class="fas fa-shield-alt"></i> 数据安全: 已保护</span>
+                <span><i class="fas fa-video"></i> 支持画质: 360p - 4K</span>
             </div>
             <div class="footer-links">
                 <a href="https://github.com/Nanford/youtube-downloader" target="_blank">
@@ -226,7 +259,7 @@
                 <button class="modal-close" onclick="hideAbout()">&times;</button>
             </div>
             <div class="modal-body">
-                <p><strong>YouTube 下载器 v2.0</strong></p>
+                <p><strong>YouTube 下载器 v2.1</strong></p>
                 <p>基于 Flask + Socket.IO + yt-dlp 构建的现代化视频下载器</p>
                 <br>
                 <p><strong>主要特性：</strong></p>
@@ -236,6 +269,17 @@
                     <li>安全的 Cookies 管理</li>
                     <li>移动端适配</li>
                     <li>HTTPS 安全连接</li>
+                    <li><strong>🆕 支持画质选择 (360p - 4K)</strong></li>
+                </ul>
+                <br>
+                <p><strong>支持的画质：</strong></p>
+                <ul>
+                    <li>🔥 4K (2160p) - 超高清</li>
+                    <li>🔥 2K (1440p) - 高清</li>
+                    <li>📺 全高清 (1080p) - 推荐</li>
+                    <li>📱 高清 (720p)</li>
+                    <li>🌐 标清 (480p)</li>
+                    <li>📶 流畅 (360p)</li>
                 </ul>
                 <br>
                 <p><strong>技术栈：</strong></p>
@@ -252,16 +296,5 @@
     <!-- 加载 Socket.IO 和主要 JavaScript -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.0.1/socket.io.js"></script>
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
-    
-    <script>
-    // 🔧 添加页面加载时的自动清理功能
-    document.addEventListener('DOMContentLoaded', function() {
-        const urlInput = document.getElementById('url-input');
-        // 确保 textarea 没有默认的空白内容
-        if (urlInput && urlInput.value.trim() === '') {
-            urlInput.value = '';
-        }
-    });
-    </script>
 </body>
 </html>

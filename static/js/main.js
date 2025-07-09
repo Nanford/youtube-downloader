@@ -1,16 +1,18 @@
-// YouTube 下载器前端逻辑 - 修复版
+// YouTube 下载器前端逻辑 - 支持画质选择版
 class YouTubeDownloader {
     constructor() {
         this.socket = null;
         this.isDownloading = false;
         this.autoScroll = true;
         this.sessionId = null;
+        this.qualityOptions = {};
         
         this.initElements();
         this.initSocketConnection();
         this.bindEvents();
         this.updateURLCount();
         this.initFileUpload();
+        this.initQualitySelection();
     }
     
     // 初始化 DOM 元素引用
@@ -21,6 +23,10 @@ class YouTubeDownloader {
             urlCount: document.getElementById('url-count'),
             downloadBtn: document.getElementById('download-btn'),
             clearBtn: document.getElementById('clear-btn'),
+            
+            // 画质选择相关
+            qualitySelect: document.getElementById('quality-select'),
+            selectedQuality: document.getElementById('selected-quality'),
             
             // 进度相关
             progressSection: document.getElementById('progress-section'),
@@ -56,6 +62,48 @@ class YouTubeDownloader {
         };
     }
     
+    // 初始化画质选择
+    initQualitySelection() {
+        // 监听画质选择变化
+        if (this.elements.qualitySelect) {
+            this.elements.qualitySelect.addEventListener('change', (e) => {
+                const selectedQuality = e.target.value;
+                this.updateSelectedQuality(selectedQuality);
+                this.addLogEntry(`🎯 选择画质: ${this.getQualityName(selectedQuality)}`, 'info');
+            });
+            
+            // 设置初始选中的画质
+            this.updateSelectedQuality(this.elements.qualitySelect.value);
+        }
+    }
+    
+    // 更新选中的画质显示
+    updateSelectedQuality(quality) {
+        if (this.elements.selectedQuality) {
+            const qualityName = this.getQualityName(quality);
+            this.elements.selectedQuality.textContent = qualityName;
+        }
+    }
+    
+    // 获取画质名称
+    getQualityName(quality) {
+        const qualityMap = {
+            'best': '最高画质',
+            '2160p': '4K (2160p)',
+            '1440p': '2K (1440p)',
+            '1080p': '全高清 (1080p)',
+            '720p': '高清 (720p)',
+            '480p': '标清 (480p)',
+            '360p': '流畅 (360p)'
+        };
+        return qualityMap[quality] || quality;
+    }
+    
+    // 获取当前选中的画质
+    getSelectedQuality() {
+        return this.elements.qualitySelect ? this.elements.qualitySelect.value : '1080p';
+    }
+    
     // 初始化文件上传相关
     initFileUpload() {
         // 拖放事件
@@ -87,7 +135,7 @@ class YouTubeDownloader {
         });
     }
     
-    // 🔧 修复后的上传Cookies文件方法
+    // 修复后的上传Cookies文件方法
     uploadCookiesFile(file) {
         if (!file) return;
         
@@ -113,18 +161,18 @@ class YouTubeDownloader {
         this.elements.uploadProgressText.textContent = '准备上传...';
         
         const formData = new FormData();
-        formData.append('cookies_file', file); // 🔧 修复：使用正确的字段名
+        formData.append('cookies_file', file);
         
         // 创建XHR请求以监控进度
         const xhr = new XMLHttpRequest();
         xhr.open('POST', '/upload_cookies', true);
         
-        // 🔧 添加会话ID头部（如果有）
+        // 添加会话ID头部（如果有）
         if (this.sessionId) {
             xhr.setRequestHeader('X-Session-ID', this.sessionId);
         }
         
-        // 🔧 添加超时设置
+        // 添加超时设置
         xhr.timeout = 30000; // 30秒超时
         
         // 上传进度
@@ -144,14 +192,13 @@ class YouTubeDownloader {
                 try {
                     const response = JSON.parse(xhr.responseText);
                     
-                    // 🔧 修复：正确处理响应格式
                     if (response.message && !response.error) {
                         this.elements.cookiesStatus.innerHTML = `
                             <span class="status-text success">✅ 已上传</span>
                         `;
                         this.addLogEntry(`🍪 Cookies 上传成功: ${response.message}`, 'success');
                         
-                        // 🔧 更新会话ID
+                        // 更新会话ID
                         if (response.session_id) {
                             this.sessionId = response.session_id;
                             this.elements.sessionIdDisplay.textContent = response.session_id.substring(0, 8);
@@ -190,7 +237,7 @@ class YouTubeDownloader {
                 this.addLogEntry(`❌ 上传失败: ${errorMessage}`, 'error');
             }
             
-            // 🔧 清空文件输入框，允许重复上传同一文件
+            // 清空文件输入框，允许重复上传同一文件
             this.elements.cookiesFile.value = '';
         };
         
@@ -204,7 +251,7 @@ class YouTubeDownloader {
             this.elements.cookiesFile.value = '';
         };
         
-        // 🔧 超时处理
+        // 超时处理
         xhr.ontimeout = () => {
             this.elements.uploadModal.style.display = 'none';
             this.elements.cookiesStatus.innerHTML = `
@@ -358,13 +405,14 @@ class YouTubeDownloader {
         return urls;
     }
     
-    // 开始下载
+    // 开始下载 - 支持画质选择
     async startDownload() {
         if (this.isDownloading) {
             return;
         }
         
         const urls = this.extractURLs(this.elements.urlInput.value);
+        const selectedQuality = this.getSelectedQuality();
         
         if (urls.length === 0) {
             this.addLogEntry('⚠️ 请输入有效的 YouTube 链接', 'warning');
@@ -374,6 +422,7 @@ class YouTubeDownloader {
         // 设置下载状态
         this.setDownloadingState(true);
         this.showProgressSection();
+        this.updateSelectedQuality(selectedQuality);
         
         try {
             const headers = {
@@ -389,7 +438,8 @@ class YouTubeDownloader {
                 method: 'POST',
                 headers: headers,
                 body: JSON.stringify({
-                    urls: urls
+                    urls: urls,
+                    quality: selectedQuality  // 新增画质参数
                 })
             });
             
@@ -564,6 +614,8 @@ class YouTubeDownloader {
             <div class="log-welcome">
                 <i class="fas fa-info-circle"></i>
                 日志已清空，准备开始新的下载任务。
+                <br><br>
+                <strong>提示：</strong>现在可以选择画质进行下载，从360p到4K任你选择！
             </div>
         `;
     }
@@ -597,6 +649,11 @@ class YouTubeDownloader {
             if (status.session_id) {
                 this.sessionId = status.session_id;
                 this.elements.sessionIdDisplay.textContent = status.session_id.substring(0, 8);
+            }
+            
+            // 保存画质选项
+            if (status.quality_options) {
+                this.qualityOptions = status.quality_options;
             }
             
             // 更新Cookies状态
@@ -676,13 +733,6 @@ function showAbout() {
 
 function hideAbout() {
     document.getElementById('about-modal').style.display = 'none';
-    
-    // 点击模态框外部关闭
-    document.getElementById('about-modal').addEventListener('click', (e) => {
-        if (e.target.id === 'about-modal') {
-            hideAbout();
-        }
-    });
 }
 
 // 添加模态框外部点击关闭功能
@@ -690,4 +740,14 @@ document.addEventListener('click', (e) => {
     if (e.target.classList.contains('modal')) {
         e.target.style.display = 'none';
     }
+});
+
+// 模态框点击关闭
+document.addEventListener('DOMContentLoaded', () => {
+    // 点击模态框外部关闭
+    document.getElementById('about-modal').addEventListener('click', (e) => {
+        if (e.target.id === 'about-modal') {
+            hideAbout();
+        }
+    });
 });
